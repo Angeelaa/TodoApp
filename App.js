@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TextInput, Button, FlatList, TouchableOpacity, Switch } from 'react-native';
+import { db, collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from './firebase';
 
 export default function App() {
   // State to store the list of tasks
@@ -9,12 +10,26 @@ export default function App() {
   // State to store the message to be displayed
   const [message, setMessage] = useState('');
 
+  // Fetch tasks from Firebase on component mount
+  useEffect(() => {
+    const fetchTasks = async () => {
+      const tasksCol = collection(db, 'tasks');
+      const taskSnapshot = await getDocs(tasksCol);
+      const taskList = taskSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setTasks(taskList);
+    };
+    fetchTasks();
+  }, []);
+
   // Function to add a new task
-  const addTask = () => {
+  const addTask = async () => {
     // Checking if the task title is not empty
     if (taskTitle.trim().length > 0) {
-      // Adding the new task to the list with a default status of 'due' (false)
-      setTasks([...tasks, { id: Date.now().toString(), title: taskTitle, status: false }]);
+      // Adding the new task to Firestore with a default status of 'due' (false)
+      const newTask = { title: taskTitle, status: false };
+      const docRef = await addDoc(collection(db, 'tasks'), newTask);
+      // Adding the new task to the local state
+      setTasks([...tasks, { id: docRef.id, ...newTask }]);
       // Displaying a message indicating the task was added
       showMessage(`Task "${taskTitle}" added.`);
       // Clearing the input field
@@ -23,25 +38,26 @@ export default function App() {
   };
 
   // Function to toggle the status of a task
-  const toggleStatus = (id) => {
-    // Updating the status of the task with the given id
-    const updatedTasks = tasks.map(task => {
-      if (task.id === id) {
-        const newStatus = !task.status;
-        // Displaying a message indicating the status change
-        showMessage(`Task "${task.title}" status changed to ${newStatus ? 'done' : 'due'}.`);
-        return { ...task, status: newStatus };
-      }
-      return task;
-    });
-    setTasks(updatedTasks);
+  const toggleStatus = async (id) => {
+    // Updating the status of the task with the given id in Firestore
+    const task = tasks.find(task => task.id === id);
+    const newStatus = !task.status;
+    const taskRef = doc(db, 'tasks', id);
+    await updateDoc(taskRef, { status: newStatus });
+    // Updating the status of the task in the local state
+    setTasks(tasks.map(task => task.id === id ? { ...task, status: newStatus } : task));
+    // Displaying a message indicating the status change
+    showMessage(`Task "${task.title}" status changed to ${newStatus ? 'done' : 'due'}.`);
   };
 
   // Function to delete a task
-  const deleteTask = (id) => {
+  const deleteTask = async (id) => {
     // Find the task to be deleted
     const taskToDelete = tasks.find(task => task.id === id);
-    // Removing the task with the given id from the list
+    // Removing the task from Firestore
+    const taskRef = doc(db, 'tasks', id);
+    await deleteDoc(taskRef);
+    // Removing the task from the local state
     setTasks(tasks.filter(task => task.id !== id));
     // Displaying a message indicating the task was deleted
     showMessage(`Task "${taskToDelete.title}" deleted.`);
